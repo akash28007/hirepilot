@@ -1,0 +1,9 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: hirepilot-redis
+    ports:
+      # Host 6380 -> container 6379.
+      # 6379 on the host is taken by the CodeForge project's redis.
+      - 6380:6379
+    restart: unless-stopped
