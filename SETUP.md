@@ -4,9 +4,9 @@ This guide will get you up and running with HirePilot locally in under 10 minute
 
 ## ✅ Prerequisites
 
-- **Node.js** v18+
+- **Node.js** v20.12+
 - **MongoDB** (local or Atlas)
-- **Redis** (via Docker: `docker run -d -p 6379:6379 redis`)
+- **Redis** (via Docker: `cd backend && docker compose up -d`, which listens on host port 6380)
 - **API Keys** (Firebase, Razorpay, Groq, YouTube)
 - **Git**
 
@@ -45,13 +45,14 @@ npm install
 Create `backend/gateway/.env`:
 ```env
 PORT=8000
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 AUTH_SERVICE_URL="http://localhost:8001"
 RESUME_SERVICE_URL="http://localhost:8002"
 INTERVIEW_SERVICE_URL="http://localhost:8003"
 ROADMAP_SERVICE_URL="http://localhost:8004"
 BILLING_SERVICE_URL="http://localhost:8005"
 FRONTEND_URL="http://localhost:5173"
+INTERNAL_API_KEY="same-long-random-string-everywhere"
 ```
 
 ### 2. Auth Service
@@ -60,8 +61,9 @@ Create `backend/services/auth/.env`:
 ```env
 PORT=8001
 MONGODB_URL="mongodb://localhost:27017/hirepilot-users"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 # Option: Use FIREBASE_SERVICE_ACCOUNT_KEY env var or keep serviceAccountKey.json locally
+INTERNAL_API_KEY="same-long-random-string-everywhere"
 ```
 
 ### 3. Resume Service
@@ -70,8 +72,10 @@ Create `backend/services/resume/.env`:
 ```env
 PORT=8002
 MONGODB_URL="mongodb://localhost:27017/hirepilot-resume"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 GROQ_API_KEY="your-groq-api-key-from-console.groq.com"
+AUTH_SERVICE_URL="http://localhost:8001"
+INTERNAL_API_KEY="same-long-random-string-everywhere"
 ```
 
 ### 4. Interview Service
@@ -80,8 +84,10 @@ Create `backend/services/interview/.env`:
 ```env
 PORT=8003
 MONGODB_URL="mongodb://localhost:27017/hirepilot-interview"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 GROQ_API_KEY="your-groq-api-key-from-console.groq.com"
+AUTH_SERVICE_URL="http://localhost:8001"
+INTERNAL_API_KEY="same-long-random-string-everywhere"
 ```
 
 ### 5. Roadmap Service
@@ -90,9 +96,11 @@ Create `backend/services/roadmap/.env`:
 ```env
 PORT=8004
 MONGODB_URL="mongodb://localhost:27017/hirepilot-roadmap"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 GROQ_API_KEY="your-groq-api-key-from-console.groq.com"
 YOUTUBE_API_KEY="your-youtube-api-key-from-console.cloud.google.com"
+AUTH_SERVICE_URL="http://localhost:8001"
+INTERNAL_API_KEY="same-long-random-string-everywhere"
 ```
 
 ### 6. Billing Service
@@ -103,6 +111,8 @@ PORT=8005
 MONGODB_URL="mongodb://localhost:27017/hirepilot-billing"
 RAZORPAY_KEY_ID="your-razorpay-key-id"
 RAZORPAY_KEY_SECRET="your-razorpay-key-secret"
+AUTH_SERVICE_URL="http://localhost:8001"
+INTERNAL_API_KEY="same-long-random-string-everywhere"
 ```
 
 ### 7. Frontend
@@ -153,10 +163,10 @@ docker run -d -p 27017:27017 --name mongodb mongo
 ### Redis
 ```bash
 # Docker (already done above)
-docker run -d -p 6379:6379 redis
+cd backend && docker compose up -d
 
 # Test connection
-redis-cli ping
+redis-cli -p 6380 ping
 # Should output: PONG
 ```
 
@@ -255,13 +265,13 @@ open http://localhost:5173/
 | `GROQ_API_KEY not found` | Ensure `.env` file in service directory with correct key |
 | Port already in use | Change PORT in `.env` or kill process: `lsof -i :8000` |
 | CORS errors | Ensure `FRONTEND_URL` in gateway `.env` is correct |
+| `401 Unauthorized` from a service | `INTERNAL_API_KEY` differs between the gateway and that service |
 
 ---
 
 ## 📚 Important Files
 
 - **Security Setup:** See [`SECURITY.md`](./SECURITY.md)
-- **Full Audit:** See [`PROJECT_AUDIT.md`](./PROJECT_AUDIT.md)
 - **Environment Templates:** `.env.example` in each directory
 
 ---
@@ -274,8 +284,6 @@ After basic setup works, continue with:
 2. **Phase 3:** Input validation, logging system, rate limiting
 3. **Phase 4:** API documentation, unit tests
 4. **Phase 5:** Deployment (Docker Compose, CI/CD, production)
-
-See [`PROJECT_AUDIT.md`](./PROJECT_AUDIT.md#13-recommended-configuration--modification-order) for full roadmap.
 
 ---
 
@@ -293,8 +301,8 @@ See [`PROJECT_AUDIT.md`](./PROJECT_AUDIT.md#13-recommended-configuration--modifi
 
 1. Check logs in each terminal window
 2. Review [`SECURITY.md`](./SECURITY.md) for configuration details
-3. Review [`PROJECT_AUDIT.md`](./PROJECT_AUDIT.md) for architecture details
-4. Verify all `.env` files are set correctly
+3. Review [`README.md`](./README.md) for architecture details
+4. Verify all `.env` files are set correctly (the same `INTERNAL_API_KEY` everywhere)
 5. Ensure all databases are running
 
 ---

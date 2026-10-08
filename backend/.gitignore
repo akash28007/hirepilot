@@ -58,3 +58,9 @@ temp/
 # Misc
 .cache/
 .env.*.json
+
+# e2e test artefacts
+tests/e2e/logs/
+tests/e2e/mock-llm.log
+tests/e2e/.sa.json
+tests/e2e/.key.pem

@@ -1,4 +1,5 @@
 import fs from "fs"
+import crypto from "crypto"
 import multer from "multer"
 const uploadPath = "./uploads"
 
@@ -11,7 +12,9 @@ const storage = multer.diskStorage({
       cb(null , uploadPath)
     },
     filename:(req,file,cb)=>{
-        cb(null , file.originalname)
+        // Random name: two users uploading "resume.pdf" at the same moment
+        // must never overwrite each other's file.
+        cb(null , `${crypto.randomUUID()}.pdf`)
     }
 })
 
@@ -28,6 +31,6 @@ export const upload = multer({
     storage,
     fileFilter,
     limits:{
-        fileSize: 20 *1024 * 1024 
+        fileSize: 20 *1024 * 1024
     }
 })

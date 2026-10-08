@@ -1,3 +1,5 @@
+import { formatList } from "./format.js";
+
 const technicalInterviewPrompt = ({
   role,
   useResume,
@@ -27,22 +29,25 @@ Summary:
 ${resume?.summary}
 
 Skills:
-${resume?.skills?.join(", ")}
+${formatList(resume?.skills)}
 
 Projects:
-${resume?.projects?.join(", ")}
+${formatList(resume?.projects)}
+
+Experience:
+${formatList(resume?.experience)}
 
 Strengths:
-${resume?.strengths?.join(", ")}
+${formatList(resume?.strengths)}
 
 Weaknesses:
-${resume?.weaknesses?.join(", ")}
+${formatList(resume?.weaknesses)}
 
 Missing Skills:
-${resume?.missingSkills?.join(", ")}
+${formatList(resume?.missingSkills)}
 
 Recommendations:
-${resume?.recommendations?.join(", ")}
+${formatList(resume?.recommendations)}
 `
 : ""
 }

@@ -4,7 +4,7 @@ import { FiArrowLeft, FiArrowRight, FiBriefcase, FiCheck, FiCheckCircle, FiFileT
 import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { useCoins } from '../../apis/user.api'
+import { apiErrorMessage, coinsFromError } from '../../utils/apiError'
 import api from '../../utils/axios'
 import { setResume } from '../../redux/resumeSlice'
 import { startInterview } from '../../apis/interview.api'
@@ -22,58 +22,53 @@ function Step1setup({ user, setUser }) {
     const uploadResume = async () => {
         if (!file) {
             alert("Please select a PDF")
+            return
         }
         try {
             setUploading(true)
-            try {
-                
-            const coinResponse = await useCoins({ coins: 10, action: "resume-scorer" })
 
-            setUser((prev) => ({
-                ...prev, interviewCoin: coinResponse?.interviewCoin,
-            }))
-            } catch (error) {
-                setUploading(false)
-                alert("Failed to use coins.")
-                return;
-            }
-
-
+            // The resume service charges (and refunds on failure) server-side.
             const formData = new FormData()
             formData.append("resume", file)
 
             const response = await api.post("/api/resume/upload", formData)
 
             dispatch(setResume(response?.data?.data))
+            setUser((prev) => ({
+                ...prev, interviewCoin: response?.data?.interviewCoin ?? prev?.interviewCoin,
+            }))
             setUploading(false)
             setFile(null)
         } catch (error) {
             console.log(error)
-            alert("Upload failed")
+            const coins = coinsFromError(error)
+            if (coins !== undefined && coins !== null) {
+                setUser((prev) => ({ ...prev, interviewCoin: coins }))
+            }
+            alert(apiErrorMessage(error, "Upload failed"))
             setUploading(false)
         }
     }
 
     const start = async () => {
         setStarting(true)
+
+        // The interview service charges the coins before generating questions
+        // and refunds them if generation fails.
         const response = await startInterview({ role, type, useResume, resume })
 
-        if(response){
-            try {
-                
-            const coinResponse = await useCoins({ coins: 50, action: "start-interview" })
-
-            setUser((prev) => ({
-                ...prev, interviewCoin: coinResponse?.interviewCoin,
-            }))
-            } catch (error) {
-                setStarting(false)
-                alert("Failed to use coins.")
-                return;
+        if (!response?.success) {
+            if (response?.interviewCoin !== undefined && response?.interviewCoin !== null) {
+                setUser((prev) => ({ ...prev, interviewCoin: response.interviewCoin }))
             }
-
-
+            setStarting(false)
+            alert(response?.message || "Could not start the interview. Please try again.")
+            return
         }
+
+        setUser((prev) => ({
+            ...prev, interviewCoin: response.interviewCoin ?? prev?.interviewCoin,
+        }))
 
         setStarting(false)
         navigate(`/interview/${response.interviewId}`)

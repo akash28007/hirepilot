@@ -157,6 +157,10 @@ const interviewSchema = new mongoose.Schema(
     },
     {
         timestamps: true,
+        // Two concurrent submits for the same question would both pass the
+        // "current question" check; with optimistic concurrency the second
+        // save fails with a VersionError instead of overwriting the first.
+        optimisticConcurrency: true,
     }
 );
 

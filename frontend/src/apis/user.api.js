@@ -10,7 +10,9 @@ export const getCurrentUser = async () => {
     }
 }
 
-export const useCoins = async (data)=>{
+// Only for actions that happen entirely in the browser (PDF download).
+// Send { action }; the server decides the price.
+export const spendCoins = async (data)=>{
     try {
         const response = await api.post("/api/auth/use-coins" , data)
         console.log(response.data)

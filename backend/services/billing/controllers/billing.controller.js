@@ -1,6 +1,7 @@
 import razorpay from "../configs/razorpay.js";
 import Billing from "../models/billing.model.js";
 import crypto from "crypto"
+import { creditCoins, sendCoinError, CoinServiceError } from "../../../shared/coins/coins.js";
 
 
 
@@ -10,6 +11,12 @@ const PLANS = {
         interviewCoins: 300,
     },
 };
+
+const signaturesMatch = (expectedHex, providedHex) => {
+    const a = Buffer.from(String(expectedHex))
+    const b = Buffer.from(String(providedHex || ""))
+    return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
 
 export const createOrder = async (req, res) => {
     try {
@@ -52,8 +59,12 @@ export const createOrder = async (req, res) => {
     }
 }
 
+// Verifies the Razorpay signature and, only then, credits the coins.
+// Safe to call more than once for the same order: the status update is
+// conditional and the credit is idempotent on the order id.
 export const verifyPayment = async (req, res) => {
     try {
+        const userId = req.headers["x-user-id"]
 
         const {
             razorpay_order_id,
@@ -61,64 +72,82 @@ export const verifyPayment = async (req, res) => {
             razorpay_signature,
         } = req.body
 
-        const payment = await Billing.findOne({
-            razorpayOrderId:razorpay_order_id
-        })
-        if(!payment){
-             return res.status(404).json({
-        success: false,
-        message: "Payment not found",
-      });
-        }
-
-        const genSign = crypto.createHmac("sha256",process.env.RAZORPAY_KEY_SECRET)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`).digest("hex")
-
-        if(genSign !== razorpay_signature){
-            payment.status = "failed";
-            await payment.save()
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
             return res.status(400).json({
-        success: false,
-        message: "Payment verification failed",
-      });
+                success: false,
+                message: "Payment details are required",
+            });
         }
 
-        if (payment.status === "paid") {
-      return res.status(200).json({
-        success: true,
-        message: "Payment already verified",
-      });
-    }
+        // The order must belong to the user who is verifying it.
+        const payment = await Billing.findOne({
+            razorpayOrderId: razorpay_order_id,
+            userId,
+        })
 
-    payment.status = "paid"
-    payment.razorpayPaymentId = razorpay_payment_id
-    payment.razorpaySignature = razorpay_signature
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                message: "Payment not found",
+            });
+        }
 
-    await payment.save()
+        const expected = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+            .update(`${razorpay_order_id}|${razorpay_payment_id}`).digest("hex")
 
-    return res.status(200).json({
-      success: true,
-      message: "Payment successful",
-    });
+        if (!signaturesMatch(expected, razorpay_signature)) {
+            if (payment.status === "created") {
+                payment.status = "failed";
+                await payment.save()
+            }
+            return res.status(400).json({
+                success: false,
+                message: "Payment verification failed",
+            });
+        }
+
+        if (payment.status !== "paid") {
+            await Billing.updateOne(
+                { _id: payment._id, status: { $ne: "paid" } },
+                {
+                    status: "paid",
+                    razorpayPaymentId: razorpay_payment_id,
+                    razorpaySignature: razorpay_signature,
+                }
+            )
+        }
+
+        // Credit server-side. The amount comes from the order record that was
+        // created with the plan, never from the browser.
+        const credit = await creditCoins(
+            userId,
+            payment.interviewCoins,
+            `order:${payment.razorpayOrderId}`
+        )
+
+        if (!payment.coinsCredited) {
+            await Billing.updateOne({ _id: payment._id }, { coinsCredited: true })
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: credit.alreadyApplied ? "Payment already verified" : "Payment successful",
+            interviewCoin: credit.interviewCoin,
+        });
     } catch (error) {
 
         console.log(error);
 
-    if (req.body?.razorpay_order_id) {
-      await Payment.findOneAndUpdate(
-        {
-          razorpayOrderId: req.body.razorpay_order_id,
-        },
-        {
-          status: "failed",
+        // The payment is recorded as paid; the credit can be retried safely by
+        // calling /verify again with the same details.
+        if (error instanceof CoinServiceError) {
+            return sendCoinError(res, error);
         }
-      );
-    }
 
-    return res.status(500).json({
-      success: false,
-      message: "Payment verification failed",
-    });
+        return res.status(500).json({
+            success: false,
+            message: "Payment verification failed",
+        });
 
     }
 }

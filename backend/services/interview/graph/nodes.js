@@ -16,7 +16,7 @@ export async function interviewNode(state) {
     return {
         questions
     }
-    
+
 }
 
 export async function feedbackNode(state) {
@@ -36,12 +36,30 @@ export async function feedbackNode(state) {
 
 
 export async function summaryNode(state) {
+    // The controller passes the questions as they were stored BEFORE this run,
+    // so the last question has the candidate's answer but not yet the feedback
+    // that feedbackNode just produced. Attach it here, otherwise the summary
+    // sees the final answer with every score at 0.
+    const questions = (state.questions || []).map((q) => {
+        const plain = typeof q?.toObject === "function" ? q.toObject() : { ...q };
+        return {
+            question: plain.question,
+            difficulty: plain.difficulty,
+            userAnswer: plain.userAnswer,
+            feedback: plain.feedback,
+        };
+    });
+
+    if (questions.length > 0 && state.feedback) {
+        questions[questions.length - 1].feedback = state.feedback;
+    }
+
     const report = await summaryAgent({
          role: state.role,
 
         type: state.type,
 
-        questions: state.questions,
+        questions,
     })
 
     return {

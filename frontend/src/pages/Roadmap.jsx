@@ -4,7 +4,7 @@ import { FiCheck, FiChevronDown, FiClock, FiFileText, FiSend, FiX, FiZap } from 
 import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { BsRocketTakeoff } from "react-icons/bs";
-import { useCoins } from '../apis/user.api'
+import { apiErrorMessage, coinsFromError } from '../utils/apiError'
 import api from '../utils/axios'
 import { useSelector } from 'react-redux'
 import { useEffect } from 'react'
@@ -61,17 +61,8 @@ function Roadmap({ user, setUser }) {
         setLoading(true);
         setError("");
         try {
-            try {
-                const coinResponse = await useCoins({ coins: 20, action: "roadmap-builder" })
-                setUser((prev) => ({
-                    ...prev, interviewCoin: coinResponse?.interviewCoin,
-                }))
-            } catch (error) {
-                setLoading(false)
-                alert("Failed to use coins.")
-                return;
-            }
-
+            // The roadmap service charges the coins itself and refunds them if
+            // generation fails; the new balance comes back in the response.
             const response = await api.post("/api/roadmap/generate", {
                 role: role.trim(),
                 targetPackage,
@@ -79,12 +70,19 @@ function Roadmap({ user, setUser }) {
                 resume
             })
             setRoadmap(response.data.data)
-getAllRoadmaps()
+            setUser((prev) => ({
+                ...prev, interviewCoin: response.data.interviewCoin ?? prev?.interviewCoin,
+            }))
+            getAllRoadmaps()
             setLoading(false)
 
         } catch (error) {
             console.error("Failed to generate roadmap:", error);
-            setError("Something went wrong while generating your roadmap. Please try again.");
+            const coins = coinsFromError(error)
+            if (coins !== undefined && coins !== null) {
+                setUser((prev) => ({ ...prev, interviewCoin: coins }))
+            }
+            setError(apiErrorMessage(error, "Something went wrong while generating your roadmap. Please try again."));
             setLoading(false)
 
         }

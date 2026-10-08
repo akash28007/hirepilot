@@ -1,5 +1,15 @@
 import api from "../utils/axios"
+import { apiErrorMessage } from "../utils/apiError"
 
+
+// Returns the server's JSON, or { success: false, message, status } on error,
+// so callers can show the real reason (e.g. not enough coins).
+const failure = (error) => ({
+    success: false,
+    status: error?.response?.status,
+    message: apiErrorMessage(error),
+    interviewCoin: error?.response?.data?.interviewCoin,
+})
 
 export const startInterview = async (data) => {
     try {
@@ -7,7 +17,7 @@ export const startInterview = async (data) => {
         return response.data
     } catch (error) {
         console.log(error)
-        return null
+        return failure(error)
     }
 }
 
@@ -30,7 +40,7 @@ export const submitAnswer = async (data) => {
         return response.data
     } catch (error) {
         console.log(error)
-        return null
+        return failure(error)
     }
 }
 

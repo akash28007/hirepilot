@@ -91,7 +91,7 @@ dist/, build/                  # Build outputs
 ### Gateway Service (`backend/gateway/.env`)
 ```env
 PORT=8000
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 AUTH_SERVICE_URL="http://localhost:8001"
 RESUME_SERVICE_URL="http://localhost:8002"
 INTERVIEW_SERVICE_URL="http://localhost:8003"
@@ -104,7 +104,7 @@ FRONTEND_URL="http://localhost:5173"
 ```env
 PORT=8001
 MONGODB_URL="mongodb://localhost:27017/hirepilot-users"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 FIREBASE_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}'
 ```
 
@@ -112,7 +112,7 @@ FIREBASE_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}'
 ```env
 PORT=8002
 MONGODB_URL="mongodb://localhost:27017/hirepilot-resume"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 GROQ_API_KEY="your-groq-api-key"
 ```
 
@@ -120,7 +120,7 @@ GROQ_API_KEY="your-groq-api-key"
 ```env
 PORT=8003
 MONGODB_URL="mongodb://localhost:27017/hirepilot-interview"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 GROQ_API_KEY="your-groq-api-key"
 ```
 
@@ -128,7 +128,7 @@ GROQ_API_KEY="your-groq-api-key"
 ```env
 PORT=8004
 MONGODB_URL="mongodb://localhost:27017/hirepilot-roadmap"
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
 GROQ_API_KEY="your-groq-api-key"
 YOUTUBE_API_KEY="your-youtube-api-key"
 ```
@@ -289,6 +289,8 @@ After setup, verify:
 - [ ] `serviceAccountKey.json` removed from git history (if applicable)
 - [ ] All required environment variables set:
   - [ ] `MONGODB_URL` (all services)
+  - [ ] `INTERNAL_API_KEY` (gateway + all services, identical value)
+  - [ ] `AUTH_SERVICE_URL` (gateway, resume, interview, roadmap, billing)
   - [ ] `REDIS_URL` (gateway + services)
   - [ ] `GROQ_API_KEY` (resume, interview, roadmap)
   - [ ] `YOUTUBE_API_KEY` (roadmap)
@@ -310,8 +312,19 @@ curl http://localhost:8000/
 
 # Test service connectivity
 curl http://localhost:8001/
-# Should show: "Hello from Auth"
+# Should show: "Hello from Auth Service"
 ```
+
+---
+
+## 🪙 Coin and Payment Integrity
+
+- Prices live on the server (`backend/services/auth/configs/pricing.js`); the browser sends only an action name.
+- The service that runs the LLM charges coins through the auth service's internal API before the work, and refunds them if the work fails.
+- Balances change only through atomic MongoDB updates (`$inc` guarded by `interviewCoin >= price`), so concurrent requests cannot overspend.
+- Every movement is written to the `CoinTransaction` ledger with a unique reference, which makes credits and refunds idempotent.
+- Billing credits coins only after verifying the Razorpay HMAC signature, for an order that belongs to the calling user. There is no public "add coins" endpoint.
+- Services require the shared `INTERNAL_API_KEY` (sent by the gateway), so `x-user-id` cannot be forged by calling a service directly. Keep this key secret and identical across the gateway and all services.
 
 ---
 
@@ -336,4 +349,4 @@ Phase 2 focuses on:
 - Comprehensive error handling
 - Input validation on all endpoints
 
-See `PROJECT_AUDIT.md` for the full improvement roadmap.
+See `README.md` for the current architecture.

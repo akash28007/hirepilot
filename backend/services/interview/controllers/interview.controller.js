@@ -1,24 +1,50 @@
-import { json } from "express";
+import mongoose from "mongoose";
 import redis from "../../../shared/redis/redis.js";
+import { chargeCoins, refundCoins, sendCoinError, CoinServiceError } from "../../../shared/coins/coins.js";
 import graph from "../graph/graph.js";
 import Interview from "../models/interview.model.js";
 
 
+const INTERVIEW_TYPES = ["hr", "technical"]
+const MAX_ROLE_LENGTH = 100
+const MAX_ANSWER_LENGTH = 15000
+
 export const startInterview = async (req, res) => {
+    let charge = null
+    const userId = req.headers["x-user-id"]
+
     try {
-        const userId = req.headers["x-user-id"]
         const {
-            type,
-            role,
             useResume = false,
             resume = {}, } = req.body;
 
-        if (!type && !role) {
+        const type = String(req.body.type || "").toLowerCase().trim()
+        const role = String(req.body.role || "").trim()
+
+        // Validate BEFORE charging, so bad input never costs coins.
+        if (!type || !role) {
             return res.status(400).json({
                 success: false,
                 message: "Interview type and role are required",
             });
         }
+
+        if (!INTERVIEW_TYPES.includes(type)) {
+            return res.status(400).json({
+                success: false,
+                message: "Interview type must be 'hr' or 'technical'",
+            });
+        }
+
+        if (role.length > MAX_ROLE_LENGTH) {
+            return res.status(400).json({
+                success: false,
+                message: `Role must be at most ${MAX_ROLE_LENGTH} characters`,
+            });
+        }
+
+        // The service that runs the LLM charges for it (server-side price).
+        charge = await chargeCoins(userId, "start-interview")
 
         const result = await graph.invoke({
             action: "start",
@@ -30,11 +56,8 @@ export const startInterview = async (req, res) => {
 
         const questions = result.questions;
 
-        if (!questions || questions.length === 0) {
-            return res.status(500).json({
-                success: false,
-                message: "Failed to generate interview questions",
-            });
+        if (!Array.isArray(questions) || questions.length === 0) {
+            throw new Error("Failed to generate interview questions")
         }
 
         const interview = await Interview.create({
@@ -65,16 +88,27 @@ export const startInterview = async (req, res) => {
             totalQuestions: interview.questions.length,
 
             question: interview.questions[0],
+
+            interviewCoin: charge.interviewCoin,
         })
     } catch (error) {
 
         console.log(error)
+
+        if (error instanceof CoinServiceError) {
+            return sendCoinError(res, error)
+        }
+
+        // Generation or saving failed after the charge: give the coins back.
+        const interviewCoin = charge ? await refundCoins(userId, charge.reference) : undefined
 
         return res.status(500).json({
 
             success: false,
 
             message: error.message,
+
+            interviewCoin,
 
         });
     }
@@ -86,10 +120,24 @@ export const submitAnswer = async (req, res) => {
         const userId = req.headers["x-user-id"]
         const { interviewId, answer } = req.body
 
-        if (!interviewId && !answer) {
+        if (!interviewId || typeof answer !== "string" || !answer.trim()) {
             return res.status(400).json({
                 success: false,
                 message: "Interview Id and Answer are required",
+            });
+        }
+
+        if (!mongoose.isValidObjectId(interviewId)) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found",
+            });
+        }
+
+        if (answer.length > MAX_ANSWER_LENGTH) {
+            return res.status(413).json({
+                success: false,
+                message: `Answer must be at most ${MAX_ANSWER_LENGTH} characters`,
             });
         }
 
@@ -212,6 +260,14 @@ export const submitAnswer = async (req, res) => {
 
     } catch (error) {
 
+        // Two submits for the same question raced; the first one won.
+        if (error instanceof mongoose.Error.VersionError) {
+            return res.status(409).json({
+                success: false,
+                message: "This answer was already submitted",
+            });
+        }
+
         console.log(error);
 
         return res.status(500).json({
@@ -230,6 +286,13 @@ export const getInterview = async (req, res) => {
     try {
         const userId = req.headers["x-user-id"]
         const { id } = req.params
+
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found",
+            });
+        }
 
         const interview = await Interview.findOne({
             _id: id,
@@ -275,7 +338,12 @@ export const getAllInterviews = async (req, res) => {
 
         const completed = interviews.filter((item) => item.status === "completed")
 
-        const totalQuestions = interviews.reduce((sum, item) => sum + item.questions.length, 0)
+        // Questions the user actually answered (unanswered ones in unfinished
+        // interviews are not counted).
+        const totalQuestions = interviews.reduce(
+            (sum, item) => sum + item.questions.filter((q) => q.userAnswer && q.userAnswer.trim()).length,
+            0
+        )
 
         const averageScore = completed.length > 0 ? Number(
             (completed.reduce((sum, item) => sum + item.overallScore, 0)) / completed.length).toFixed(1) : 0

@@ -8,6 +8,11 @@ import CodeEditor from './CodeEditor'
 import Timer from './Timer'
 import { submitAnswer } from '../../apis/interview.api'
 import { useNavigate } from 'react-router-dom'
+
+// Chrome and Edge only (Firefox has none; Brave has the API but blocks its server)
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+const UNSUPPORTED_MSG = "Voice answers need Chrome or Edge. You can still type your answer."
+
 function Step2interview({ interviewData, user }) {
 const navigate = useNavigate()
   // ── State ──
@@ -36,6 +41,15 @@ const navigate = useNavigate()
   const userVideoRef = useRef(null);
   const recognitionRef = useRef(null);
   const streamRef = useRef(null);
+  // Recognition callbacks and speakText's promises outlive the render that
+  // created them, so the mic bookkeeping lives in refs (state would be stale).
+  const micOnRef = useRef(true);
+  const wantListeningRef = useRef(false); // should recognition be running right now?
+  const listeningRef = useRef(false);     // is it actually running?
+
+  const [listening, setListening] = useState(false);
+  const [interim, setInterim] = useState("");   // words heard but not finalised yet
+  const [micError, setMicError] = useState(SpeechRecognition ? "" : UNSUPPORTED_MSG);
 
 
   const videoSource = voiceGender === "female" ? femaleVideo : maleVideo
@@ -44,34 +58,81 @@ const navigate = useNavigate()
 
   // Speech recognition
 
-  useEffect(()=>{
-    if(!("webkitSpeechRecognition" in window))return;
-    const rec = new window.webkitSpeechRecognition()
-     rec.lang = "en-US";
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.onresult = (e)=>{
-      const t = e.results[e.results.length - 1][0].transcript;
-      setAnswer((prev)=>prev + " "+ t)
-    }
-    recognitionRef.current = rec
-  },[])
-
+  const tryStart = ()=>{
+    const rec = recognitionRef.current
+    if(!rec || listeningRef.current) return; // still running/stopping — onend restarts it
+    try { rec.start() } catch { /* already starting */ }
+  }
 
   const startMic = ()=>{
-    recognitionRef.current?.start()
+    wantListeningRef.current = true
+    tryStart()
   }
   const stopMic = ()=>{
+    wantListeningRef.current = false
     recognitionRef.current?.stop()
   }
 
-  const toggleMic = ()=>{
-    if(micOn){
-      stopMic()
-    }else{
-      startMic()
+  const disableMic = (message)=>{
+    wantListeningRef.current = false
+    micOnRef.current = false
+    setMicOn(false)
+    setMicError(message)
+  }
+
+  useEffect(()=>{
+    if(!SpeechRecognition) return;
+    const rec = new SpeechRecognition()
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onstart = ()=>{
+      listeningRef.current = true
+      setListening(true)
     }
-    setMicOn(!micOn)
+    rec.onresult = (e)=>{
+      let live = ""
+      for(let i = e.resultIndex; i < e.results.length; i++){
+        const t = e.results[i][0].transcript.trim()
+        if(e.results[i].isFinal) setAnswer((prev)=>(prev.trim() ? prev.trimEnd() + " " : "") + t)
+        else live += t + " "
+      }
+      setInterim(live.trim())
+    }
+    rec.onerror = (e)=>{
+      if(e.error === "not-allowed" || e.error === "service-not-allowed"){
+        disableMic("Microphone access is blocked. Allow it from the icon in the address bar, then turn the mic back on.")
+      }else if(e.error === "network"){
+        disableMic("Speech recognition couldn't reach its server. Check your internet connection (Brave blocks this feature).")
+      }else if(e.error === "audio-capture"){
+        disableMic("No microphone found. Check that one is connected and selected in your system settings.")
+      }
+      // "no-speech" and "aborted" are routine — onend resumes listening
+    }
+    rec.onend = ()=>{
+      listeningRef.current = false
+      setListening(false)
+      setInterim("")
+      // Chrome ends the session after a pause even with continuous=true, so resume it
+      if(wantListeningRef.current) setTimeout(tryStart, 250)
+    }
+    recognitionRef.current = rec
+    return ()=>{
+      wantListeningRef.current = false
+      rec.abort()
+    }
+  },[])
+
+  const toggleMic = ()=>{
+    const next = !micOnRef.current
+    micOnRef.current = next
+    setMicOn(next)
+    if(next){
+      setMicError(SpeechRecognition ? "" : UNSUPPORTED_MSG)
+      if(!isAIPlaying) startMic() // otherwise speakText starts it when the AI finishes
+    }else{
+      stopMic()
+    }
   }
 
   const toggleCamera =async ()=>{
@@ -147,7 +208,7 @@ const navigate = useNavigate()
         utter.onend=()=>{
           aiVideoRef.current?.pause()
           setIsAIPlaying(false)
-          if(micOn) startMic()
+          if(micOnRef.current) startMic()
             setTimeout(()=>{ setSubtitle("");resolve() },300)
         }
         setSubtitle(text)
@@ -208,6 +269,15 @@ const navigate = useNavigate()
 
     const res = await submitAnswer({ interviewId: interviewData.interviewId, answer:finalAnswer})
 
+    if (!res?.success) {
+      // 409: this answer was already recorded (e.g. a double submit) — reload
+      // so the page shows the interview's real current question.
+      if (res?.status === 409) { window.location.reload(); return; }
+      setLoading(false)
+      alert(res?.message || "Could not submit your answer. Please try again.")
+      return
+    }
+
     if(res.completed){
        setFeedback(res.feedback);
         await new Promise((r) => setTimeout(r, 700));
@@ -250,6 +320,14 @@ const navigate = useNavigate()
     setLoading(true)
 
     const res = await submitAnswer({ interviewId: interviewData.interviewId, answer})
+
+    if (!res?.success) {
+      if (res?.status === 409) { window.location.reload(); return; }
+      setLoading(false)
+      setTimerActive(true)
+      alert(res?.message || "Could not submit your answer. Please try again.")
+      return
+    }
 
     if(res.completed){
        setFeedback(res.feedback);
@@ -405,8 +483,13 @@ const navigate = useNavigate()
             </div>
 
             <div className='min-h-[14px] flex items-center justify-center'>
-              {micOn && isAIPlaying && (
-                <span className="text-[10px] text-red-400/80">Mic paused — AI is speaking</span>)}
+              {micError ? (
+                <span className="text-[10px] text-red-400/80 text-center">{micError}</span>
+              ) : micOn && isAIPlaying ? (
+                <span className="text-[10px] text-red-400/80">Mic paused — AI is speaking</span>
+              ) : micOn && listening ? (
+                <span className="text-[10px] text-green-400/80">Listening…</span>
+              ) : null}
             </div>
 
             <span className="text-[10px] text-white/35 text-center">
@@ -475,6 +558,7 @@ const navigate = useNavigate()
             onKeyDown={(e)=>{if(e.ctrlKey && e.key === "Enter") submit()}}
             placeholder='Write your answer here… or speak if mic is on'
              className='flex-1 w-full rounded-xl bg-[#17181E] border border-white/8 p-4 text-sm text-white outline-none resize-none focus:border-white/25 transition placeholder-white/20'/>
+            {interim && <p className='mt-1.5 text-xs italic text-white/40'>{interim}…</p>}
           </div>
 
           <div className='mt-3 min-h-[0px]'>

@@ -55,5 +55,17 @@ Response Format:
    new HumanMessage(resumeText),
     ])
 
-    return response.content;
+    // Models sometimes wrap JSON in ```json fences despite the instructions.
+    const cleaned = String(response.content)
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim()
+
+    try {
+        return JSON.parse(cleaned)
+    } catch {
+        console.log("Resume Agent Parse Error")
+        console.log(cleaned)
+        throw new Error("The AI returned an unreadable analysis. Please try again.")
+    }
 }

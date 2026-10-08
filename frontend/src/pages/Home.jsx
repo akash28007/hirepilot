@@ -130,12 +130,12 @@ function Home({ setUser }) {
                                 {
                                     icon: <FiFileText />,
                                     title: "Resume Agent",
-                                    desc: "Create ATS-friendly resumes, improve profile strength and maximize interview opportunities.",
+                                    desc: "Score your resume like an ATS would, find missing skills, and build a clean ATS-friendly PDF.",
                                 },
                                 {
                                     icon: <FiMic />,
                                     title: "Interview Agent",
-                                    desc: "Conduct realistic HR, Technical and Coding interviews with AI-powered simulations.",
+                                    desc: "Practise realistic HR and technical interviews, including coding questions, with a spoken AI interviewer.",
                                 },
                                 {
                                     icon: <FiBarChart2 />,
@@ -145,7 +145,7 @@ function Home({ setUser }) {
                                 {
                                     icon: <FiMap />,
                                     title: "Roadmap Agent",
-                                    desc: "Generate personalized learning roadmaps based on goals, skills and performance.",
+                                    desc: "Generate a learning roadmap for your target role and salary, personalised with your resume.",
                                 },
                             ].map((agent, i) => (
                                 <motion.div

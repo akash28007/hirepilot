@@ -1,7 +1,8 @@
 import React from 'react'
 import { FiDownload } from 'react-icons/fi'
 import { useReactToPrint } from "react-to-print";
-import { useCoins } from '../../apis/user.api';
+import { spendCoins } from '../../apis/user.api';
+import { apiErrorMessage } from '../../utils/apiError';
 function DownloadBtn({ docRef, user, setUser }) {
 
     const handlePdf = useReactToPrint({
@@ -12,7 +13,8 @@ function DownloadBtn({ docRef, user, setUser }) {
     const handleDownload = async () => {
         try {
             
-                const coinResponse = await useCoins({ coins: 10, action: "download-pdf" })
+                // The price is set on the server; only the action name is sent.
+                const coinResponse = await spendCoins({ action: "download-pdf" })
 
                 await handlePdf()
                 setUser((prev) => ({
@@ -22,13 +24,7 @@ function DownloadBtn({ docRef, user, setUser }) {
           
 
         } catch (error) {
-            if (error.response?.status === 403) {
-                return alert("Not enough Interview Coins.");
-            }
-            alert(
-                error.response?.data?.message ||
-                "Something went wrong."
-            );
+            alert(apiErrorMessage(error));
 
 
 

@@ -35,16 +35,24 @@ function App() {
 
   },[])
 
+  // Load the saved resume analysis whenever a user signs in (not only on the
+  // first page load), so it is available right after login.
+  const signedInId = user?.userId || user?._id
   useEffect(()=>{
+    if(!signedInId){
+      // Signed out: drop the previous user's resume from the store.
+      dispatch(setResume(null))
+      return
+    }
 
     const getResumeData = async()=>{
       const result = await getResume()
-      dispatch(setResume(result?.data))
+      dispatch(setResume(result?.data ?? null))
     }
 
     getResumeData()
 
-  },[])
+  },[signedInId, dispatch])
 
 
   if(loading){

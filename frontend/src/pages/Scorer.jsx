@@ -7,7 +7,7 @@ import api from '../utils/axios'
 import { useDispatch, useSelector } from 'react-redux'
 import { setResume } from '../redux/resumeSlice'
 import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts"
-import { useCoins } from '../apis/user.api'
+import { apiErrorMessage, coinsFromError } from '../utils/apiError'
 const ScoreRing = ({ score }) => {
     const color = score >= 75 ? "#7c3aed" : score >= 50 ? "#f59e0b" : "#ef4444";
     return (
@@ -84,34 +84,31 @@ function Scorer({ user, setUser }) {
     const uploadResume = async () => {
         if (!file) {
             alert("Please select a PDF")
+            return
         }
         try {
             setLoading(true)
 
-            try {
-                const coinResponse = await useCoins({ coins: 10, action: "resume-scorer" })
-                setUser((prev) => ({
-                    ...prev, interviewCoin: coinResponse?.interviewCoin,
-                }))
-            } catch (error) {
-                setLoading(false)
-                alert("Failed to use coins.")
-                return;
-            }
-
+            // The resume service charges the coins itself and refunds them if
+            // the analysis fails; the new balance comes back in the response.
             const formData = new FormData()
             formData.append("resume", file)
 
             const response = await api.post("/api/resume/upload", formData)
 
             dispatch(setResume(response?.data?.data))
+            setUser((prev) => ({
+                ...prev, interviewCoin: response?.data?.interviewCoin ?? prev?.interviewCoin,
+            }))
             setLoading(false)
-
-
 
         } catch (error) {
             console.log(error)
-            alert("Upload failed")
+            const coins = coinsFromError(error)
+            if (coins !== undefined && coins !== null) {
+                setUser((prev) => ({ ...prev, interviewCoin: coins }))
+            }
+            alert(apiErrorMessage(error, "Upload failed"))
             setLoading(false)
         }
     }

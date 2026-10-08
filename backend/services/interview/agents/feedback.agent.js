@@ -7,10 +7,12 @@ import feedbackPrompt from "../prompts/feedbackPrompt.js";
 
 export const feedbackAgent = async (data) => {
 
+    let response;
+
     try {
         const prompt = feedbackPrompt(data)
 
-        const response = await llm.invoke(prompt)
+        response = await llm.invoke(prompt)
 
         const cleaned = response.content
         .replace(/```json/g, "")
@@ -20,7 +22,7 @@ export const feedbackAgent = async (data) => {
         return JSON.parse(cleaned)
     } catch (error) {
         console.log("Feedback Agent Parse Error");
-    console.log(response.content);
+    console.log(response?.content ?? error.message);
 
     throw new Error("Failed to generate feedback");
         

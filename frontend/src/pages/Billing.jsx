@@ -31,9 +31,9 @@ const plan = [
         disabled: false,
         features: [
             "300 Interview Coins",
-            "Unlimited Resume Score",
-            "Unlimited Roadmaps",
-            "Priority AI Response",
+            "Enough for 6 mock interviews",
+            "Use on any feature",
+            "One-time payment",
         ],
     },
 ];
@@ -57,12 +57,24 @@ function Billing({ user, setUser }) {
 
                 handler: async function (response) {
                     try {
-                        await api.post("/api/billing/verify", response)
-
-                        const coinRes = await api.post("/api/auth/add-coins", { coins: plan.coins })
+                        // The billing service verifies the signature and credits
+                        // the coins itself. Verifying is idempotent, so a network
+                        // failure can be retried without double-crediting.
+                        let verifyRes
+                        for (let attempt = 1; ; attempt++) {
+                            try {
+                                verifyRes = await api.post("/api/billing/verify", response)
+                                break
+                            } catch (err) {
+                                const status = err?.response?.status
+                                const retryable = !status || status >= 500
+                                if (!retryable || attempt >= 3) throw err
+                                await new Promise((r) => setTimeout(r, 1000 * attempt))
+                            }
+                        }
 
                         setUser((prev) => ({
-                            ...prev, interviewCoin: coinRes.data.interviewCoin
+                            ...prev, interviewCoin: verifyRes.data.interviewCoin ?? prev?.interviewCoin
                         }))
 
                         alert("Payment Successful 🎉")
@@ -139,7 +151,7 @@ function Billing({ user, setUser }) {
 
                                 <div className='relative mt-3.5 space-y-1.5'>
                                     {[
-                                        { title: "Resume Builder", coin: "-10" },
+                                        { title: "PDF Download", coin: "-10" },
                                         { title: "Resume Scorer", coin: "-10" },
                                         { title: "Roadmap Generator", coin: "-20" },
                                         { title: "AI Interview", coin: "-50" },
@@ -160,9 +172,9 @@ function Billing({ user, setUser }) {
                                 <div className='relative mt-3.5 rounded-lg border border-violet-400/20 bg-violet-500/10 p-2.5'>
                                     <p className="text-[10px] leading-4 text-violet-300">
                                         Every AI feature uses Interview Coins.
-                                        Buy more coins anytime to continue using
-                                        Resume Builder, Resume Scorer,
-                                        AI Interview and Roadmap Generator.
+                                        If an AI request fails, its coins are
+                                        refunded automatically. Buy more coins
+                                        anytime to keep practising.
                                     </p>
 
                                 </div>
@@ -182,7 +194,7 @@ function Billing({ user, setUser }) {
                         Interview Coins
                     </h1>
                     <p className="mt-2 text-sm text-black/45">
-                        Use coins for Resume Scoring, Resume Builder, AI Interviews, and Roadmap Generation.
+                        Use coins for Resume Scoring, AI Interviews, Roadmap Generation, and PDF downloads.
                     </p>
                 </div>
 

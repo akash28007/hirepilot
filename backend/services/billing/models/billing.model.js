@@ -25,6 +25,12 @@ const billingSchema = new mongoose.Schema({
       enum: ["created", "paid", "failed"],
       default: "created",
     },
+
+    // Set once the auth service has credited the coins for this order.
+    coinsCredited: {
+      type: Boolean,
+      default: false,
+    },
 },{timestamps:true})
 
 
